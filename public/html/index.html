@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html>
+    <style>
+        #limon {
+            opacity: 0;
+            -webkit-transition: opacity 0.2s ease;
+            -moz-transition: opacity 0.2s ease;
+            -ms-transition: opacity 0.2s ease;
+            -o-transition: opacity 0.2s ease;
+            transition: opacity 0.2s ease;
+            width: 35vh;
+            transform: rotate(0);
+        }
+        #limon.in {
+           opacity: 1;
+        }
+        #pantalla{
+            padding: 0;
+            display: none;
+            width: 35vh;
+            height: 35vh;
+            margin: 0 auto;
+        }
+        #link-wimumo{
+            color: whitesmoke;
+            font-size: 1em;
+            font-family: verdana;    
+        }
+        #limon-msg{
+            margin-top: 30vh;
+        }
+        .widthblock{
+            display:block;
+            width: 100%;
+        }
+        .out-of-flow-block{
+            position: fixed;
+            text-align: center;
+            float: left;
+            font-weight: bold;
+            width: 100%;
+            color: whitesmoke;
+            font-size: 2em;
+            font-family: verdana;          
+        }
+        .out-of-flow-block-small{
+            position: fixed;
+            text-align: center;
+            float: left;
+            width: 100%;
+            color: whitesmoke;
+            font-size: 0.75em;
+            font-family: verdana;
+        }
+        #gracias{
+            display: none;
+            opacity: 0;
+            -webkit-transition: opacity 2s ease;
+            -moz-transition: opacity 2s ease;
+            -ms-transition: opacity 2s ease;
+            -o-transition: opacity 2s ease;
+            transition: opacity 2s ease;          
+        }
+        #gracias.in{
+            display: block;
+            opacity: 1;
+        }
+        body {
+          background-image: url('fondoEstrellas.jpeg');
+          background-color: black;
+          text-align: center;
+          width: 100%;
+        }
+        p{
+          color: whitesmoke;
+          font-family: verdana;
+          font-size: 0.75em;
+        }
+        h1 {
+          color: whitesmoke;
+          font-family: verdana;  
+        }
+        </style>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body>
+        <div class="widthblock">
+            <p>OSCuarentena</p>
+            <p id="status"></p>
+        </div>
+        <br>
+        <br>
+        <div class="out-of-flow-block">
+            <div id="limon-msg">TOCA LA PANTALLA!</div>
+        </div>
+
+        <div class="widthblock">
+            <img id="limon" class="off" src='circulo.png'>
+        </div>
+     
+        <div class="widthblock">
+            <canvas id="pantalla"></canvas>
+        </div>
+    </br>
+        <div class="out-of-flow-block-small">
+            <div id="gracias" class="off">
+                Gracias por participar! </br> 
+                <a id="link-wimumo" href="https://labs.ing.unlp.edu.ar/gibic/es/wimumo/">
+                    M&aacutes sobre la medida de biopotenciales con WIMUMO
+                </a> | 
+                <a id="link-wimumo" href="https://www.instagram.com/gibicleici/">
+                    Instagram
+                </a>
+            </div>
+        </div>
+    </body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.4/socket.io.js"></script>
+<script>
+// Enlaces útiles para este proyecto
+// https://stackoverflow.com/questions/6169666/how-to-resize-an-image-to-fit-in-the-browser-window
+// https://davidwalsh.name/vibration-api
+// Preparación del navegador
+var supportsVibrate;
+var pulsoEnable  = false;
+document.onclick =  tocapantalla;
+function tocapantalla(e) {
+ 
+    document.getElementById("limon-msg").innerHTML = "";
+    document.getElementById("pantalla").style.display = "block";
+    pulsoEnable = true;
+    supportsVibrate = "vibrate" in window.navigator;
+
+    if(supportsVibrate==false){
+    document.getElementById("status").innerHTML = 
+        "Su dispositivo no quiere vibrar :( pero se ver&aacuten las im&aacutegenes";
+    };
+}
+
+setTimeout(function(){ 
+        document.getElementById("gracias").className = "in";
+     }, 120000);
+
+//
+// Vibración y pulso del limón
+//
+function pulso(){
+ 
+    if(pulsoEnable != true){
+        return;
+    }
+
+    if(supportsVibrate == true){
+        navigator.vibrate(150); 
+    }
+
+    document.getElementById("limon").className = "in"; 
+    setTimeout(function(){ 
+        document.getElementById("limon").className = "out";
+     }, 200);
+
+}
+
+//
+// Rotar circulo
+//
+var mr = 0;
+
+setInterval(function() {
+    document.getElementById("limon").style.transform =  
+        " rotate("+  mr.toString()  +"deg)";
+    mr = mr+0.1;
+    if(mr==360){
+        mr=1;
+    }
+}, 60);
+
+//
+// Simular latido
+//
+
+//setInterval(pulso, 1000);
+
+// 
+// SOCKET
+//
+
+var socket = io();
+
+var samplesEnv = [];
+var samplesAccu = [];
+var contAccu = 0;
+
+var tam_paq = 1;        // muestras por paquete     (dado por el adquisidor)
+var paq_per_sec = 25;   // paquetes por segundo     (dado por el adquisidor)
+
+var paq_graf = 2;       // paquetes graf por vez    (opcion >= a 2) 2
+var n_paq_delay = 25;    // paquetes delay           (opcion > a paq_graf) 4
+var max_paq = 100;       // num max paq buffer       (opcion > n_paq_delay) 20
+
+var t_frame = 1/paq_per_sec*paq_graf*1000; // antes 50   
+
+var flagPrimerDelay = true;
+
+var intGraf;
+
+socket.on('connected', function () {
+
+    window.setInterval(procBuffer, 500);
+
+});
+
+socket.on('data', function (data) {
+
+    samplesAccu = samplesAccu.concat(JSON.parse(data));
+    
+});
+
+function procBuffer(){
+   
+    if(flagPrimerDelay == true){
+        contAccu++;
+    }
+    if(contAccu>2){
+       flagPrimerDelay = false;
+       samplesEnv = samplesAccu;
+       samplesAccu= [];
+       contAccu = 0;
+       try{
+            window.clearInterval(intGraf);
+        }catch(err){};
+       intGraf = window.setInterval(graficarSigs, t_frame);
+    }
+
+    if(flagPrimerDelay==false){
+        samplesEnv = samplesEnv.concat(samplesAccu);
+        samplesAccu = [];
+        if(samplesEnv.length>70){
+            samplesEnv=[];
+            flagPrimerDelay=true;
+        }
+        //console.log(samplesEnv.length);
+
+    }
+   
+}
+
+//
+// Grafico de señal
+//
+
+var c = document.getElementById("pantalla");
+
+
+var channels = 1;
+var alto = c.height;
+var ancho = c.width;
+var offset = Math.floor(alto * 4 / 8);
+
+//var ctx = c.getContext("2d", { alpha: false }); 
+var ctx = c.getContext("2d"); 
+ctx.clearRect(0, 0, ancho, alto);
+
+var lenv = new Linea2(ctx, 1, "white"); //lightblue
+
+var t_tick = t_frame/1000;
+var t_ancho = 7;
+
+var x = 0;
+var dx = t_tick / t_ancho * ancho;
+
+var escala = 50;
+
+
+var mpulso
+var umax = 800;
+var umin = 600;
+var urefrac = 5;
+var contrefrac = 0;
+var estadoPulso = 0;
+
+var deltam;
+//var inv_delta_t = 1;
+var mpulso_ant=0;
+
+function graficarSigs() {
+
+    let e = [];
+    let x_pixel = [];
+    let j = 0;
+    let xe = x;
+    
+    if(samplesEnv.length == 0 || samplesEnv == undefined || samplesEnv[0] == undefined){
+        return;
+    }
+    if(samplesEnv.length < paq_graf*tam_paq){
+        return;
+    }
+    let samps = samplesEnv.splice(0,paq_graf*tam_paq);
+    for (j = 0; j < paq_graf; j++) {
+
+        //
+        // ACÁ DETECCIÓN DE PULSO PARA QUE COINCIDA VISUAL y TÁCTIL
+        //
+        mpulso = samps[j*tam_paq + 0];
+        
+        switch(estadoPulso){
+            case 0:
+                if(mpulso>umax){
+                    pulso();
+                    estadoPulso++;
+                }
+                break;
+            case 1:
+                if(mpulso<umin){
+                    estadoPulso++;
+                }
+                break;
+            case 2:
+                contrefrac++;
+                if(contrefrac>urefrac){
+                    contrefrac = 0;
+                    estadoPulso=0;
+                }
+                break;
+        }
+
+        //
+        // Y derivo para visual más cardíaca
+        //
+
+        deltam = mpulso-mpulso_ant;
+        mpulso_ant = mpulso;
+    
+        //
+        // Acá el gráfico
+        //
+
+        e.push(parseInt(- deltam / escala + offset ));
+        x_pixel.push(parseInt(xe));
+        xe = xe + dx / paq_graf;
+    }
+
+    x = x + dx;
+    lenv.dr(x_pixel, e);
+    if (x > ancho) {
+        lenv.reset();
+        initCanvas(ctx);
+        x = 0;
+    }
+
+
+}
+
+function initCanvas(ctx){
+    ctx.clearRect(0, 0, ancho, alto);
+}
+
+function Linea2(c, an, co) {
+    
+    this.x = [];
+    this.y = [];
+    this.xant = 0;
+    this.yant = 0;
+    this.ctx = c;
+    this.ancho = an;
+    this.color = co;
+    this.flagComienzo = true;
+
+    this.reset = function(){
+        this.flagComienzo = true;
+    }
+
+    this.dr = function (a, b) {
+        this.x = a;
+        this.y = b;
+        this.ctx.beginPath();
+        this.ctx.lineWidth = this.ancho;
+        this.ctx.strokeStyle = this.color;
+        if(this.flagComienzo){
+            this.xant = this.x[0];
+            this.yant = this.y[0];
+            this.flagComienzo = false;
+        }
+        this.ctx.moveTo(this.xant, this.yant);
+        let idx=0;
+        for (idx = 0; idx < this.x.length; idx+=1) {
+            this.ctx.lineTo(this.x[idx], this.y[idx]);
+            //console.log(this.x[idx]+" , "+ this.y[idx]);
+        }
+        this.ctx.stroke();
+        this.xant = this.x[idx - 1];
+        this.yant = this.y[idx - 1];
+        
+        }
+}
+</script>
+</html> 
